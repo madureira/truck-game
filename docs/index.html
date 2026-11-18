@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Meli Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      background: #111;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+      color: #ccc;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Phone-shaped stage: fills the screen on a phone, a centered 9:16 column on a desktop. */
+    #stage {
+      position: relative;
+      height: 100vh;
+      height: 100dvh;
+      width: 100vw;
+      width: min(100vw, calc(100dvh * 9 / 16));
+    }
+    /* SDL requires a canvas without border or padding. Its size here is the display size;
+       the game picks the drawing-buffer resolution. */
+    #canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      padding: 0;
+      outline: none;
+      touch-action: none;
+    }
+    /* Covers the stage while loading and on the start screen. */
+    #overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      font-size: 15px;
+      background: #111;
+    }
+    /* On the start screen the scene shows through, with the truck parked on the road. */
+    #overlay.ready { background: rgba(17, 17, 17, 0.45); }
+    #overlay.hidden { display: none; }
+    #start {
+      display: none;
+      min-width: 190px;
+      padding: 18px 44px;
+      border: 0;
+      border-radius: 999px;
+      background: #ffe600;
+      color: #2d3277;
+      font: bold 26px sans-serif;
+      letter-spacing: 1px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    #overlay.ready #start { display: block; }
+    #overlay.ready #message { display: none; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    <div id="overlay">
+      <span id="message">Carregando&hellip;</span>
+      <button id="start" type="button">Start</button>
+    </div>
+  </div>
+
+  <script>
+    var canvas = document.getElementById('canvas');
+    var overlay = document.getElementById('overlay');
+    var message = document.getElementById('message');
+    var startButton = document.getElementById('start');
+    var started = false;
+
+    function showMessage(text) {
+      message.textContent = text;
+      overlay.className = '';
+    }
+
+    // Background music: an <audio> element streams the file, so nothing is decoded up front and
+    // it costs no WebAssembly. Browsers only let it play after a user gesture: the Start button.
+    var music = new Audio('music.mp3');
+    music.loop = true;
+    music.preload = 'none';
+    music.volume = 0.6;
+
+    function playMusic() {
+      var result = music.play();
+      if (result && result.catch) { result.catch(function () {}); }
+    }
+
+    // Fullscreen is best effort: some browsers and WebViews do not offer it (iPhone Safari, or an
+    // app WebView whose host has not enabled it). The game works the same without it.
+    function enterFullscreen() {
+      var root = document.documentElement;
+      var request = root.requestFullscreen || root.webkitRequestFullscreen;
+      if (!request) { return; }
+      try {
+        var result = request.call(root, { navigationUI: 'hide' });
+        if (result && result.then) {
+          result.then(function () {
+            // A portrait game: keep the phone from flipping to landscape where that is allowed.
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock('portrait').catch(function () {});
+            }
+          }).catch(function () {});
+        }
+      } catch (error) { /* not allowed here: carry on without fullscreen */ }
+    }
+
+    // Everything here runs inside the click, which is what allows fullscreen and audio.
+    startButton.addEventListener('click', function () {
+      if (started) { return; }
+      enterFullscreen();
+      playMusic();
+      Module._meli_game_start();
+    });
+
+    // Music follows the page: silent while the app is in the background.
+    document.addEventListener('visibilitychange', function () {
+      if (!started) { return; }
+      if (document.hidden) { music.pause(); } else { playMusic(); }
+    });
+
+    // Debug switches come from the query string, e.g. index.html?--autostart&--autopilot
+    var query = window.location.search.length > 1
+      ? decodeURIComponent(window.location.search.substring(1)).split('&').filter(Boolean)
+      : [];
+
+    var Module = {
+      canvas: canvas,
+      arguments: query.filter(function (item) { return item.indexOf('--') === 0; }),
+      // Called by the game once it is loaded and drawing: show the Start button.
+      onGameReady: function () {
+        overlay.className = 'ready';
+        document.body.setAttribute('data-ready', '1');
+      },
+      // Called by the game when it leaves the start screen.
+      onGameStarted: function () {
+        started = true;
+        overlay.className = 'hidden';
+      },
+      onAbort: function () { showMessage('Não foi possível iniciar o jogo neste aparelho.'); },
+      onExit: function (code) { if (code !== 0) { showMessage('Não foi possível iniciar o jogo neste aparelho.'); } }
+    };
+
+    // A WebView sent to the background can lose its WebGL context: offer a clean restart.
+    canvas.addEventListener('webglcontextlost', function (event) {
+      event.preventDefault();
+      showMessage('Toque para recarregar');
+      overlay.addEventListener('click', function () { window.location.reload(); });
+    });
+
+    // Automated check (index.html?selftest). It presses the Start button and then sends synthetic
+    // pointer events to the canvas, recording the lane after each step in <body data-selftest>.
+    // Expected: data-selftest="-1,0,-1,0". A tap counted twice, a second finger that is ignored or
+    // touches that never arrive each give a different trace. <body data-music> tells whether the
+    // music is playing (headless Chrome needs --autoplay-policy=no-user-gesture-required for that).
+    if (query.indexOf('selftest') !== -1) {
+      var fire = function (type, id, kind, fraction) {
+        var rect = canvas.getBoundingClientRect();
+        canvas.dispatchEvent(new PointerEvent(type, {
+          pointerId: id, pointerType: kind, isPrimary: id !== 12,
+          clientX: rect.left + rect.width * fraction, clientY: rect.top + rect.height * 0.5,
+          button: 0, buttons: type === 'pointerup' ? 0 : 1,
+          bubbles: true, cancelable: true
+        }));
+      };
+      var actions = [
+        // Real mouse click on the left half: 0 -> -1
+        function () { fire('pointerdown', 1, 'mouse', 0.25); fire('pointerup', 1, 'mouse', 0.25); },
+        // First finger down on the right half and held: -1 -> 0
+        function () { fire('pointerdown', 11, 'touch', 0.75); },
+        // Second finger down on the left half while the first is still down: 0 -> -1
+        function () { fire('pointerdown', 12, 'touch', 0.25); },
+        // Both released, then a quick tap on the right half: -1 -> 0
+        function () {
+          fire('pointerup', 12, 'touch', 0.25);
+          fire('pointerup', 11, 'touch', 0.75);
+          fire('pointerdown', 13, 'touch', 0.75);
+          fire('pointerup', 13, 'touch', 0.75);
+        }
+      ];
+      var trace = [];
+      var waitForGame = setInterval(function () {
+        if (document.body.getAttribute('data-ready') === null) { return; }
+        clearInterval(waitForGame);
+        startButton.click();
+        actions.forEach(function (action, index) {
+          setTimeout(action, 500 * index + 300);
+          setTimeout(function () {
+            trace.push(document.body.getAttribute('data-lane'));
+            if (trace.length === actions.length) {
+              document.body.setAttribute('data-selftest', trace.join(','));
+              document.body.setAttribute('data-started', started ? '1' : '0');
+              document.body.setAttribute('data-music', music.paused ? 'paused' : 'playing');
+            }
+          }, 500 * index + 700);
+        });
+      }, 100);
+    }
+  </script>
+  <script async type="text/javascript" src="index.js"></script>
+</body>
+</html>
