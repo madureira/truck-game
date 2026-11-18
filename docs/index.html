@@ -95,8 +95,11 @@
       box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
       transform-origin: left center;
       pointer-events: none;
+      transition: opacity 0.2s ease-out;
     }
     #hud.visible { display: flex; }
+    /* Out of the way during the trip through a time portal and while its purchase is shown. */
+    #hud.away { opacity: 0; }
     #hud svg { display: block; width: 30px; height: 30px; }
     #hud-count { min-width: 1ch; text-align: right; font-variant-numeric: tabular-nums; }
     /* A little bump each time a box is collected. */
@@ -264,7 +267,7 @@
     // Stamp of this build, written in by the build (web/stamp_build.cmake). The files that belong
     // to it are asked for with the stamp in their address, so a copy of an older build kept by
     // the browser or by a server in between is never used with this page.
-    var buildStamp = '3a1efe4979';
+    var buildStamp = '64c92d6ffd';
     function stamped(address) {
       return buildStamp.indexOf('__') === 0 ? address : address + '?v=' + buildStamp;
     }
@@ -594,6 +597,7 @@
       var trip = ++portalTrip;
       portalSoundOver = false;
       purchaseDue = -1;
+      hud.classList.add('away'); // Nothing over the tunnel and the purchase; back when the game moves on
       fadeMusic(MUSIC_DUCKED_VOLUME, 0.3);
       setTimeout(function () {
         if (trip !== portalTrip) { return; }
@@ -631,6 +635,7 @@
         fadeMusic(MUSIC_VOLUME, 0.8);
       }
       hidePurchase();
+      hud.classList.remove('away');
     }
 
     function hidePurchase() {
@@ -817,6 +822,6 @@
       }, 100);
     }
   </script>
-  <script async type="text/javascript" src="index.js?v=3a1efe4979"></script>
+  <script async type="text/javascript" src="index.js?v=64c92d6ffd"></script>
 </body>
 </html>
