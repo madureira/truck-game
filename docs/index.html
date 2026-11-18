@@ -267,7 +267,7 @@
     // Stamp of this build, written in by the build (web/stamp_build.cmake). The files that belong
     // to it are asked for with the stamp in their address, so a copy of an older build kept by
     // the browser or by a server in between is never used with this page.
-    var buildStamp = '64c92d6ffd';
+    var buildStamp = '24b1062bc4';
     function stamped(address) {
       return buildStamp.indexOf('__') === 0 ? address : address + '?v=' + buildStamp;
     }
@@ -822,6 +822,6 @@
       }, 100);
     }
   </script>
-  <script async type="text/javascript" src="index.js?v=64c92d6ffd"></script>
+  <script async type="text/javascript" src="index.js?v=24b1062bc4"></script>
 </body>
 </html>
