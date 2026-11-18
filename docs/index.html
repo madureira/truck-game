@@ -77,11 +77,40 @@
     }
     #overlay.ready #start { display: block; }
     #overlay.ready #message { display: none; }
+    /* HUD: how many boxes were collected. Plain HTML over the canvas: sharp text at any pixel
+       density, and it costs the game nothing to draw. It never takes touches from the canvas. */
+    #hud {
+      display: none;
+      position: absolute;
+      top: calc(12px + env(safe-area-inset-top, 0px));
+      left: calc(12px + env(safe-area-inset-left, 0px));
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px 6px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #2d3277;
+      font: bold 22px sans-serif;
+      line-height: 1;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+      transform-origin: left center;
+      pointer-events: none;
+    }
+    #hud.visible { display: flex; }
+    #hud svg { display: block; width: 30px; height: 30px; }
+    #hud-count { min-width: 1ch; text-align: right; font-variant-numeric: tabular-nums; }
+    /* A little bump each time a box is collected. */
+    #hud.pop { animation: hud-pop 0.28s ease-out; }
+    @keyframes hud-pop {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.16); }
+      100% { transform: scale(1); }
+    }
     /* Frame-rate readout, filled in by the game when the page is opened with ?--fps */
     #fps {
       display: none;
       position: absolute;
-      top: 6px; left: 6px;
+      bottom: 6px; left: 6px;
       padding: 3px 7px;
       border-radius: 4px;
       background: rgba(0, 0, 0, 0.55);
@@ -98,6 +127,16 @@
       <span id="message">Carregando&hellip;</span>
       <button id="start" type="button">Start</button>
     </div>
+    <div id="hud" aria-label="Caixas coletadas">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <polygon points="16,3 29,9.5 16,16 3,9.5" fill="#dcae7a"/>
+        <polygon points="3,9.5 16,16 16,30 3,23.5" fill="#c29160"/>
+        <polygon points="29,9.5 16,16 16,30 29,23.5" fill="#a67848"/>
+        <polygon points="8,7 11,5.5 24,12 21,13.5" fill="#f0dcae"/>
+        <polygon points="21,13.5 24,12 24,19 21,20.5" fill="#d9c08c"/>
+      </svg>
+      <span id="hud-count">0</span>
+    </div>
     <div id="fps"></div>
   </div>
 
@@ -106,6 +145,8 @@
     var overlay = document.getElementById('overlay');
     var message = document.getElementById('message');
     var startButton = document.getElementById('start');
+    var hud = document.getElementById('hud');
+    var hudCount = document.getElementById('hud-count');
     var started = false;
 
     function showMessage(text) {
@@ -123,6 +164,65 @@
     function playMusic() {
       var result = music.play();
       if (result && result.catch) { result.catch(function () {}); }
+    }
+
+    // Sound effects: tiny files, downloaded while the Start screen is up, decoded once into memory
+    // and played through Web Audio, so they start without delay and can overlap. The order of
+    // `soundNames` is shared with the game: it must match SoundEffect in SoundPlayer.h.
+    var soundNames = ['swipe', 'collect_box', 'collision'];
+    // Volumes are gains: 1 plays the file as recorded. swipe.mp3 is recorded very quietly (its
+    // peak is 6% of full scale), so it is amplified; at 5 it still peaks at only 30%.
+    var soundVolumes = { swipe: 5.0, collect_box: 0.65, collision: 0.9 };
+    var soundFiles = {};   // name -> downloaded file, waiting to be decoded
+    var soundBuffers = {}; // name -> decoded sound, ready to play
+    var soundGains = {};
+    var soundsPlayed = {}; // name -> how many times it was played (read by automated checks)
+    var audioContext = null;
+
+    function decodeSound(name) {
+      if (!audioContext || !soundFiles[name]) { return; }
+      var data = soundFiles[name];
+      delete soundFiles[name];
+      audioContext.decodeAudioData(data, function (buffer) { soundBuffers[name] = buffer; }, function () {});
+    }
+
+    soundNames.forEach(function (name) {
+      fetch(name + '.mp3')
+        .then(function (response) { return response.ok ? response.arrayBuffer() : Promise.reject(); })
+        .then(function (data) { soundFiles[name] = data; decodeSound(name); })
+        .catch(function () { /* the game simply plays without this sound */ });
+    });
+
+    // Browsers only let audio run after a user gesture, so this is called from the Start button
+    // and again from any later touch (a phone call or the app going to the background can leave
+    // the audio suspended).
+    function unlockSounds() {
+      var Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) { return; }
+      if (!audioContext) {
+        audioContext = new Context();
+        soundNames.forEach(function (name) {
+          soundGains[name] = audioContext.createGain();
+          soundGains[name].gain.value = soundVolumes[name];
+          soundGains[name].connect(audioContext.destination);
+          decodeSound(name);
+        });
+      }
+      if (audioContext.state !== 'running' && !document.hidden) {
+        var result = audioContext.resume();
+        if (result && result.catch) { result.catch(function () {}); }
+      }
+    }
+
+    function playSound(index) {
+      var name = soundNames[index];
+      var buffer = soundBuffers[name];
+      if (!buffer || audioContext.state !== 'running') { return; }
+      var source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(soundGains[name]);
+      source.start();
+      soundsPlayed[name] = (soundsPlayed[name] || 0) + 1;
     }
 
     // Fullscreen is best effort: some browsers and WebViews do not offer it (iPhone Safari, or an
@@ -149,13 +249,24 @@
       if (started) { return; }
       enterFullscreen();
       playMusic();
+      unlockSounds();
       Module._meli_game_start();
     });
 
-    // Music follows the page: silent while the app is in the background.
+    document.addEventListener('pointerdown', function () {
+      if (started) { unlockSounds(); }
+    }, true);
+
+    // Audio follows the page: silent while the app is in the background.
     document.addEventListener('visibilitychange', function () {
       if (!started) { return; }
-      if (document.hidden) { music.pause(); } else { playMusic(); }
+      if (document.hidden) {
+        music.pause();
+        if (audioContext) { audioContext.suspend(); }
+      } else {
+        playMusic();
+        unlockSounds();
+      }
     });
 
     // Debug switches come from the query string, e.g. index.html?--autostart&--autopilot
@@ -175,7 +286,24 @@
       onGameStarted: function () {
         started = true;
         overlay.className = 'hidden';
+        hud.classList.add('visible');
+        // Already done by the Start button; this covers --autostart, where the browser decides
+        // whether audio may run without a gesture.
+        unlockSounds();
       },
+      // Called by the game with the number of boxes collected so far, each time it changes.
+      onBoxesCollected: function (count) {
+        hudCount.textContent = count;
+        if (count > 0) {
+          // Restart the bump even if the previous one is still playing.
+          hud.classList.remove('pop');
+          void hud.offsetWidth;
+          hud.classList.add('pop');
+        }
+      },
+      // Called by the game with a SoundEffect value.
+      playSound: playSound,
+      soundsPlayed: soundsPlayed,
       onAbort: function () { showMessage('Não foi possível iniciar o jogo neste aparelho.'); },
       onExit: function (code) { if (code !== 0) { showMessage('Não foi possível iniciar o jogo neste aparelho.'); } }
     };
