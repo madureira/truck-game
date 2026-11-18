@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Meli Game</title>
+  <!-- No favicon: avoids a pointless request (and a 404) when the page loads. -->
+  <link rel="icon" href="data:,">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -75,6 +77,18 @@
     }
     #overlay.ready #start { display: block; }
     #overlay.ready #message { display: none; }
+    /* Frame-rate readout, filled in by the game when the page is opened with ?--fps */
+    #fps {
+      display: none;
+      position: absolute;
+      top: 6px; left: 6px;
+      padding: 3px 7px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      font: 12px monospace;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -84,6 +98,7 @@
       <span id="message">Carregando&hellip;</span>
       <button id="start" type="button">Start</button>
     </div>
+    <div id="fps"></div>
   </div>
 
   <script>
@@ -174,32 +189,51 @@
 
     // Automated check (index.html?selftest). It presses the Start button and then sends synthetic
     // pointer events to the canvas, recording the lane after each step in <body data-selftest>.
-    // Expected: data-selftest="-1,0,-1,0". A tap counted twice, a second finger that is ignored or
-    // touches that never arrive each give a different trace. <body data-music> tells whether the
-    // music is playing (headless Chrome needs --autoplay-policy=no-user-gesture-required for that).
+    // Expected: data-selftest="-1,0,1,0,-1,0,0". A gesture counted twice, a second finger that is
+    // ignored, a swipe read as a tap or touches that never arrive each give a different trace.
+    // <body data-music> tells whether the music is playing (headless Chrome needs
+    // --autoplay-policy=no-user-gesture-required for that).
     if (query.indexOf('selftest') !== -1) {
-      var fire = function (type, id, kind, fraction) {
+      var fire = function (type, id, kind, x, y) {
         var rect = canvas.getBoundingClientRect();
         canvas.dispatchEvent(new PointerEvent(type, {
           pointerId: id, pointerType: kind, isPrimary: id !== 12,
-          clientX: rect.left + rect.width * fraction, clientY: rect.top + rect.height * 0.5,
-          button: 0, buttons: type === 'pointerup' ? 0 : 1,
+          clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * (y === undefined ? 0.5 : y),
+          button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1,
           bubbles: true, cancelable: true
         }));
       };
       var actions = [
-        // Real mouse click on the left half: 0 -> -1
+        // Mouse click on the left half: 0 -> -1
         function () { fire('pointerdown', 1, 'mouse', 0.25); fire('pointerup', 1, 'mouse', 0.25); },
-        // First finger down on the right half and held: -1 -> 0
-        function () { fire('pointerdown', 11, 'touch', 0.75); },
-        // Second finger down on the left half while the first is still down: 0 -> -1
-        function () { fire('pointerdown', 12, 'touch', 0.25); },
-        // Both released, then a quick tap on the right half: -1 -> 0
+        // Tap on the right half: -1 -> 0
+        function () { fire('pointerdown', 13, 'touch', 0.75); fire('pointerup', 13, 'touch', 0.75); },
+        // One finger rests on the left half while a second one taps the right half: 0 -> +1
         function () {
-          fire('pointerup', 12, 'touch', 0.25);
-          fire('pointerup', 11, 'touch', 0.75);
-          fire('pointerdown', 13, 'touch', 0.75);
-          fire('pointerup', 13, 'touch', 0.75);
+          fire('pointerdown', 11, 'touch', 0.25);
+          fire('pointerdown', 12, 'touch', 0.75);
+          fire('pointerup', 12, 'touch', 0.75);
+        },
+        // The resting finger is lifted, which is a tap on the left half: +1 -> 0
+        function () { fire('pointerup', 11, 'touch', 0.25); },
+        // Swipe to the left that starts on the RIGHT half (the direction wins): 0 -> -1
+        function () {
+          fire('pointerdown', 14, 'touch', 0.70);
+          fire('pointermove', 14, 'touch', 0.60);
+          fire('pointermove', 14, 'touch', 0.45);
+          fire('pointerup', 14, 'touch', 0.45);
+        },
+        // Swipe to the right that starts on the LEFT half: -1 -> 0
+        function () {
+          fire('pointerdown', 15, 'touch', 0.20);
+          fire('pointermove', 15, 'touch', 0.50);
+          fire('pointerup', 15, 'touch', 0.50);
+        },
+        // Vertical swipe: no lane change, stays at 0
+        function () {
+          fire('pointerdown', 16, 'touch', 0.50, 0.30);
+          fire('pointermove', 16, 'touch', 0.52, 0.70);
+          fire('pointerup', 16, 'touch', 0.52, 0.70);
         }
       ];
       var trace = [];
