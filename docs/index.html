@@ -267,7 +267,7 @@
     // Stamp of this build, written in by the build (web/stamp_build.cmake). The files that belong
     // to it are asked for with the stamp in their address, so a copy of an older build kept by
     // the browser or by a server in between is never used with this page.
-    var buildStamp = '24b1062bc4';
+    var buildStamp = '8620f5a752';
     function stamped(address) {
       return buildStamp.indexOf('__') === 0 ? address : address + '?v=' + buildStamp;
     }
@@ -308,7 +308,7 @@
     // Sound effects: tiny files, downloaded while the Start screen is up, decoded once into memory
     // and played through Web Audio, so they start without delay and can overlap. The order of
     // `soundNames` is shared with the game: it must match SoundEffect in SoundPlayer.h.
-    var soundNames = ['swipe', 'collect_box', 'collision'];
+    var soundNames = ['swipe', 'collect_box', 'collision', 'engine-starting'];
     // The sounds of a time portal are played by the page itself, one after the other (see
     // onPortalEntered). They are bigger files and are not needed for a while, so they are only
     // downloaded once the game has started.
@@ -316,18 +316,20 @@
     // Volumes are gains: 1 plays the file as recorded. swipe.mp3 is recorded very quietly (its
     // peak is 6% of full scale), so it is amplified; at 5 it still peaks at only 30%. modal.mp3
     // is quiet too (peak 17%), portal.mp3 is recorded at full scale.
-    var soundVolumes = { swipe: 5.0, collect_box: 0.65, collision: 0.9, portal: 0.6, modal: 2.5 };
+    var soundVolumes = { swipe: 5.0, collect_box: 0.65, collision: 0.9, 'engine-starting': 1.0, portal: 0.6, modal: 2.5 };
     var soundFiles = {};   // name -> downloaded file, waiting to be decoded
     var soundBuffers = {}; // name -> decoded sound, ready to play
+    var soundStarts = {};  // name -> seconds until its first audible moment (files may begin in silence)
     var soundLengths = {}; // name -> seconds until its last audible moment (files may end in silence)
     var soundGains = {};
     var soundsPlayed = {}; // name -> how many times it was played (read by automated checks)
     var audioContext = null;
 
-    // How long a sound really lasts: until the last moment it is louder than 5% of its own
-    // loudest point. Recordings often end with a fading tail or plain silence, and what comes
-    // after a sound should not wait for that.
-    function audibleLength(buffer) {
+    // When a sound really begins and ends: the first and the last moment it is louder than 5% of
+    // its own loudest point. Recordings often begin with a pause and end with a fading tail or
+    // plain silence. A sound is played from where it begins, so it is heard the instant it is
+    // asked for, and what comes after it does not wait for the silence at its end.
+    function audibleSpan(buffer) {
       var peak = 0;
       var channel, samples, index;
       for (channel = 0; channel < buffer.numberOfChannels; ++channel) {
@@ -336,14 +338,21 @@
           if (Math.abs(samples[index]) > peak) { peak = Math.abs(samples[index]); }
         }
       }
+      var first = buffer.length;
       var last = 0;
       for (channel = 0; channel < buffer.numberOfChannels; ++channel) {
         samples = buffer.getChannelData(channel);
+        index = 0;
+        while (index < first && Math.abs(samples[index]) < peak * 0.05) { ++index; }
+        first = Math.min(first, index);
         index = samples.length - 1;
         while (index > last && Math.abs(samples[index]) < peak * 0.05) { --index; }
         last = Math.max(last, index);
       }
-      return Math.min(buffer.duration, last / buffer.sampleRate + 0.1);
+      return {
+        start: Math.max(0, first / buffer.sampleRate - 0.03), // A breath before, not to clip the attack
+        end: Math.min(buffer.duration, last / buffer.sampleRate + 0.1)
+      };
     }
 
     function decodeSound(name) {
@@ -351,8 +360,10 @@
       var data = soundFiles[name];
       delete soundFiles[name];
       audioContext.decodeAudioData(data, function (buffer) {
+        var span = audibleSpan(buffer);
         soundBuffers[name] = buffer;
-        soundLengths[name] = audibleLength(buffer);
+        soundStarts[name] = span.start;
+        soundLengths[name] = span.end;
       }, function () {});
     }
 
@@ -391,12 +402,13 @@
     function playSoundNamed(name) {
       var buffer = soundBuffers[name];
       if (!buffer || !audioContext || audioContext.state !== 'running') { return 0; }
+      var from = soundStarts[name] || 0;
       var source = audioContext.createBufferSource();
       source.buffer = buffer;
       source.connect(soundGains[name]);
-      source.start();
+      source.start(0, from);
       soundsPlayed[name] = (soundsPlayed[name] || 0) + 1;
-      return soundLengths[name] || buffer.duration;
+      return (soundLengths[name] || buffer.duration) - from;
     }
 
     // Called by the game with a SoundEffect value.
@@ -809,7 +821,7 @@
         clearInterval(waitForGame);
         startButton.click();
         actions.forEach(function (action, index) {
-          setTimeout(action, 500 * index + 300);
+          setTimeout(action, 500 * index + 3500); // The truck only answers once it has set off
           setTimeout(function () {
             trace.push(document.body.getAttribute('data-lane'));
             if (trace.length === actions.length) {
@@ -817,11 +829,11 @@
               document.body.setAttribute('data-started', started ? '1' : '0');
               document.body.setAttribute('data-music', music.paused ? 'paused' : 'playing');
             }
-          }, 500 * index + 700);
+          }, 500 * index + 3900);
         });
       }, 100);
     }
   </script>
-  <script async type="text/javascript" src="index.js?v=24b1062bc4"></script>
+  <script async type="text/javascript" src="index.js?v=8620f5a752"></script>
 </body>
 </html>
