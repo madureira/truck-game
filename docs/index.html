@@ -106,6 +106,105 @@
       35% { transform: scale(1.16); }
       100% { transform: scale(1); }
     }
+    /* The purchase shown at a time portal. The game is paused behind it with its time tunnel
+       filling the canvas, so the backdrop stays see-through. The card arrives spinning out of
+       the tunnel and goes back into it. */
+    #retro {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      align-items: center;
+      justify-content: center;
+      padding: calc(14px + env(safe-area-inset-top, 0px)) 18px calc(14px + env(safe-area-inset-bottom, 0px));
+      background: rgba(8, 8, 40, 0);
+      transition: background 0.4s ease-out;
+    }
+    #retro.open { display: flex; }
+    #retro.shown { background: rgba(8, 8, 40, 0.30); }
+    #retro-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 350px;
+      max-height: 100%;
+      padding: 18px 18px 16px;
+      border-radius: 24px;
+      background: #fff;
+      color: #2d3277;
+      text-align: center;
+      box-shadow: 0 0 0 4px #ffe600, 0 18px 50px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transform: scale(0.12) rotate(-20deg);
+      transition: transform 0.55s cubic-bezier(0.2, 1.35, 0.4, 1), opacity 0.2s ease-out;
+    }
+    #retro.shown #retro-card { opacity: 1; transform: none; }
+    #retro.closing { background: rgba(8, 8, 40, 0); }
+    #retro.closing #retro-card {
+      opacity: 0;
+      transform: scale(0.1) rotate(16deg);
+      transition: transform 0.28s ease-in, opacity 0.28s ease-in;
+    }
+    #retro-kicker {
+      font: bold 11px sans-serif;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #6b70a8;
+    }
+    /* The month spins back like the dial of a time machine before it settles. */
+    #retro-month {
+      margin-top: 2px;
+      font: bold 38px sans-serif;
+      line-height: 1.1;
+      text-transform: capitalize;
+    }
+    #retro-month.rewinding { color: #9aa0cf; filter: blur(1.2px); }
+    #retro-intro { margin-top: 4px; font: 14px sans-serif; color: #4a4f8c; }
+    #retro-photo {
+      flex: 0 1 auto;
+      width: 100%;
+      height: 200px;
+      max-height: 32vh;
+      min-height: 90px;
+      margin-top: 12px;
+      border: 1px solid #e6e7f2;
+      border-radius: 16px;
+      background: #fff;
+      overflow: hidden;
+    }
+    /* The photo starts faded like an old memory and comes back to full color. */
+    #retro-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      filter: sepia(1) blur(5px) saturate(0.5);
+      transform: scale(1.12);
+      transition: filter 1.1s ease-out 0.25s, transform 1.1s ease-out 0.25s;
+    }
+    #retro.shown #retro-image { filter: none; transform: none; }
+    #retro-title { margin-top: 12px; font: bold 18px sans-serif; line-height: 1.25; }
+    #retro-date { margin-top: 4px; font: 13px sans-serif; color: #6b70a8; }
+    #retro-thanks { margin-top: 10px; font: bold 14px sans-serif; color: #2d3277; }
+    #retro-dots { display: flex; gap: 7px; margin-top: 12px; }
+    #retro-dots span { width: 8px; height: 8px; border-radius: 50%; background: #d9dbee; }
+    #retro-dots span.done { background: #2d3277; }
+    #retro-dots span.now { background: #ffe600; box-shadow: 0 0 0 2px #2d3277; }
+    #retro-continue {
+      flex: 0 0 auto;
+      width: 100%;
+      margin-top: 14px;
+      padding: 14px 24px;
+      border: 0;
+      border-radius: 999px;
+      background: #ffe600;
+      color: #2d3277;
+      font: bold 19px sans-serif;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
     /* Frame-rate readout, filled in by the game when the page is opened with ?--fps */
     #fps {
       display: none;
@@ -137,6 +236,19 @@
       </svg>
       <span id="hud-count">0</span>
     </div>
+    <div id="retro" role="dialog" aria-modal="true" aria-labelledby="retro-month">
+      <div id="retro-card">
+        <p id="retro-kicker"></p>
+        <h2 id="retro-month"></h2>
+        <p id="retro-intro"></p>
+        <div id="retro-photo"><img id="retro-image" alt=""></div>
+        <h3 id="retro-title"></h3>
+        <p id="retro-date"></p>
+        <p id="retro-thanks">&iexcl;Gracias por elegir Mercado Libre!</p>
+        <div id="retro-dots"></div>
+        <button id="retro-continue" type="button">Continuar</button>
+      </div>
+    </div>
     <div id="fps"></div>
   </div>
 
@@ -156,42 +268,91 @@
 
     // Background music: an <audio> element streams the file, so nothing is decoded up front and
     // it costs no WebAssembly. Browsers only let it play after a user gesture: the Start button.
+    var MUSIC_VOLUME = 0.6;
+    var MUSIC_DUCKED_VOLUME = 0.15; // While the sounds of a time portal play over it
     var music = new Audio('music.mp3');
     music.loop = true;
     music.preload = 'none';
-    music.volume = 0.6;
+    music.volume = MUSIC_VOLUME;
 
     function playMusic() {
       var result = music.play();
       if (result && result.catch) { result.catch(function () {}); }
     }
 
+    // Slides the music to another volume instead of jumping there. (On iPhone the system keeps
+    // the volume of an <audio> element for itself: there this changes nothing.)
+    var musicFade = 0;
+    function fadeMusic(target, seconds) {
+      var from = music.volume;
+      var began = Date.now();
+      clearInterval(musicFade);
+      musicFade = setInterval(function () {
+        var progress = Math.min((Date.now() - began) / (seconds * 1000), 1);
+        music.volume = from + (target - from) * progress;
+        if (progress >= 1) { clearInterval(musicFade); }
+      }, 30);
+    }
+
     // Sound effects: tiny files, downloaded while the Start screen is up, decoded once into memory
     // and played through Web Audio, so they start without delay and can overlap. The order of
     // `soundNames` is shared with the game: it must match SoundEffect in SoundPlayer.h.
     var soundNames = ['swipe', 'collect_box', 'collision'];
+    // The sounds of a time portal are played by the page itself, one after the other (see
+    // onPortalEntered). They are bigger files and are not needed for a while, so they are only
+    // downloaded once the game has started.
+    var portalSoundNames = ['portal', 'modal'];
     // Volumes are gains: 1 plays the file as recorded. swipe.mp3 is recorded very quietly (its
-    // peak is 6% of full scale), so it is amplified; at 5 it still peaks at only 30%.
-    var soundVolumes = { swipe: 5.0, collect_box: 0.65, collision: 0.9 };
+    // peak is 6% of full scale), so it is amplified; at 5 it still peaks at only 30%. modal.mp3
+    // is quiet too (peak 17%), portal.mp3 is recorded at full scale.
+    var soundVolumes = { swipe: 5.0, collect_box: 0.65, collision: 0.9, portal: 0.6, modal: 2.5 };
     var soundFiles = {};   // name -> downloaded file, waiting to be decoded
     var soundBuffers = {}; // name -> decoded sound, ready to play
+    var soundLengths = {}; // name -> seconds until its last audible moment (files may end in silence)
     var soundGains = {};
     var soundsPlayed = {}; // name -> how many times it was played (read by automated checks)
     var audioContext = null;
+
+    // How long a sound really lasts: until the last moment it is louder than 5% of its own
+    // loudest point. Recordings often end with a fading tail or plain silence, and what comes
+    // after a sound should not wait for that.
+    function audibleLength(buffer) {
+      var peak = 0;
+      var channel, samples, index;
+      for (channel = 0; channel < buffer.numberOfChannels; ++channel) {
+        samples = buffer.getChannelData(channel);
+        for (index = 0; index < samples.length; ++index) {
+          if (Math.abs(samples[index]) > peak) { peak = Math.abs(samples[index]); }
+        }
+      }
+      var last = 0;
+      for (channel = 0; channel < buffer.numberOfChannels; ++channel) {
+        samples = buffer.getChannelData(channel);
+        index = samples.length - 1;
+        while (index > last && Math.abs(samples[index]) < peak * 0.05) { --index; }
+        last = Math.max(last, index);
+      }
+      return Math.min(buffer.duration, last / buffer.sampleRate + 0.1);
+    }
 
     function decodeSound(name) {
       if (!audioContext || !soundFiles[name]) { return; }
       var data = soundFiles[name];
       delete soundFiles[name];
-      audioContext.decodeAudioData(data, function (buffer) { soundBuffers[name] = buffer; }, function () {});
+      audioContext.decodeAudioData(data, function (buffer) {
+        soundBuffers[name] = buffer;
+        soundLengths[name] = audibleLength(buffer);
+      }, function () {});
     }
 
-    soundNames.forEach(function (name) {
+    function fetchSound(name) {
       fetch(name + '.mp3')
         .then(function (response) { return response.ok ? response.arrayBuffer() : Promise.reject(); })
         .then(function (data) { soundFiles[name] = data; decodeSound(name); })
         .catch(function () { /* the game simply plays without this sound */ });
-    });
+    }
+
+    soundNames.forEach(fetchSound);
 
     // Browsers only let audio run after a user gesture, so this is called from the Start button
     // and again from any later touch (a phone call or the app going to the background can leave
@@ -201,7 +362,7 @@
       if (!Context) { return; }
       if (!audioContext) {
         audioContext = new Context();
-        soundNames.forEach(function (name) {
+        soundNames.concat(portalSoundNames).forEach(function (name) {
           soundGains[name] = audioContext.createGain();
           soundGains[name].gain.value = soundVolumes[name];
           soundGains[name].connect(audioContext.destination);
@@ -214,16 +375,266 @@
       }
     }
 
-    function playSound(index) {
-      var name = soundNames[index];
+    // Plays a sound and returns how many seconds it will be heard for: 0 if it could not be
+    // played (not loaded yet, or audio not allowed).
+    function playSoundNamed(name) {
       var buffer = soundBuffers[name];
-      if (!buffer || audioContext.state !== 'running') { return; }
+      if (!buffer || !audioContext || audioContext.state !== 'running') { return 0; }
       var source = audioContext.createBufferSource();
       source.buffer = buffer;
       source.connect(soundGains[name]);
       source.start();
       soundsPlayed[name] = (soundsPlayed[name] || 0) + 1;
+      return soundLengths[name] || buffer.duration;
     }
+
+    // Called by the game with a SoundEffect value.
+    function playSound(index) {
+      playSoundNamed(soundNames[index]);
+    }
+
+    // ---- Purchases of the year, shown at the time portals ----
+    //
+    // The data is not part of the game: it is a JSON document (format in the README), read from,
+    // in this order:
+    //   1. window.MeliGame.purchases     the document itself, handed over by the host app
+    //   2. window.MeliGame.purchasesUrl  its address, given by the host app
+    //   3. ?purchases=<address>          its address in the query string (same origin only)
+    //   4. purchases.json                next to this page
+    // Image addresses inside it may be absolute or relative to the document's own address.
+    var MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                     'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    var MAX_PURCHASES = 6; // As many portals as the game places along the lap (kMaxPortals)
+    var hostConfig = (typeof window.MeliGame === 'object' && window.MeliGame) || {};
+    // An address taken from the query string is only followed to these origins: a link to the
+    // game must not be able to fill it with somebody else's text. Add the API's origin here.
+    var allowedDataOrigins = [window.location.origin];
+
+    var retroData = { year: new Date().getFullYear(), purchases: [] };
+    var gameLoaded = false;
+    var dataSettled = false;
+
+    var retro = document.getElementById('retro');
+    var retroMonth = document.getElementById('retro-month');
+    var retroImage = document.getElementById('retro-image');
+    var retroDots = document.getElementById('retro-dots');
+    var retroContinue = document.getElementById('retro-continue');
+    var retroTimer = 0;
+
+    function cleanText(value, limit) {
+      return typeof value === 'string' ? value.trim().substring(0, limit) : '';
+    }
+
+    function webAddress(value, base) {
+      try {
+        var url = new URL(value, base);
+        return (url.protocol === 'https:' || url.protocol === 'http:') ? url.href : '';
+      } catch (error) { return ''; }
+    }
+
+    // "2026-03-14" -> { year: 2026, month: 3, day: 14 }, or null
+    function parseDay(value) {
+      var match = /^(\d{4})-(\d{2})-(\d{2})/.exec(typeof value === 'string' ? value : '');
+      if (!match) { return null; }
+      var day = { year: +match[1], month: +match[2], day: +match[3] };
+      return (day.month >= 1 && day.month <= 12 && day.day >= 1 && day.day <= 31) ? day : null;
+    }
+
+    // Keeps only what the page understands: the document comes from outside, so nothing in it is
+    // trusted. Every text ends up in the page through textContent, never as HTML.
+    function readPurchases(raw, base) {
+      var result = { year: new Date().getFullYear(), purchases: [] };
+      if (!raw || typeof raw !== 'object' || !Array.isArray(raw.purchases)) { return result; }
+
+      var year = parseInt(raw.year, 10);
+      if (year >= 2000 && year <= 2100) { result.year = year; }
+
+      raw.purchases.forEach(function (item) {
+        if (!item || typeof item !== 'object' || result.purchases.length >= MAX_PURCHASES) { return; }
+        var day = parseDay(item.date);
+        var month = parseInt(item.month, 10);
+        if (!(month >= 1 && month <= 12)) { month = day ? day.month : 0; }
+        var title = cleanText(item.title, 140);
+        if (!month || !title) { return; }
+        result.purchases.push({
+          month: month,
+          day: day,
+          title: title,
+          image: typeof item.image === 'string' ? webAddress(item.image, base) : ''
+        });
+      });
+      return result;
+    }
+
+    function purchasesAddress() {
+      if (typeof hostConfig.purchasesUrl === 'string') {
+        var given = webAddress(hostConfig.purchasesUrl, window.location.href);
+        if (given) { return given; }
+      }
+      var fromQuery = null;
+      try { fromQuery = new URLSearchParams(window.location.search).get('purchases'); } catch (error) { /* old browser */ }
+      if (fromQuery) {
+        var asked = webAddress(fromQuery, window.location.href);
+        if (asked && allowedDataOrigins.indexOf(new URL(asked).origin) !== -1) { return asked; }
+        console.warn('Purchases address refused (origin not allowed):', fromQuery);
+      }
+      return new URL('purchases.json', window.location.href).href;
+    }
+
+    function settlePurchases(data) {
+      if (dataSettled) { return; }
+      dataSettled = true;
+      retroData = data;
+      // Warm the browser's cache, so each photo is there by the time its portal is reached.
+      retroData.purchases.forEach(function (purchase) {
+        if (purchase.image) { purchase.preload = new Image(); purchase.preload.src = purchase.image; }
+      });
+      showStartWhenReady();
+    }
+
+    function loadPurchases() {
+      if (hostConfig.purchases && typeof hostConfig.purchases === 'object') {
+        settlePurchases(readPurchases(hostConfig.purchases, window.location.href));
+        return;
+      }
+      var address = purchasesAddress();
+      // Never keep the player waiting for it: without the data the game simply has no portals.
+      setTimeout(function () { settlePurchases(readPurchases(null)); }, 6000);
+      fetch(address)
+        .then(function (response) { return response.ok ? response.json() : Promise.reject(); })
+        .then(function (raw) { settlePurchases(readPurchases(raw, address)); })
+        .catch(function () { settlePurchases(readPurchases(null)); });
+    }
+
+    // The Start button appears once the game is loaded and the purchases are known, and that is
+    // when the game is told which portals to put on the road: one per purchase, in order.
+    function showStartWhenReady() {
+      if (!gameLoaded || !dataSettled) { return; }
+      if (retroData.purchases.length > 0) {
+        Module._meli_game_clear_portals();
+        retroData.purchases.forEach(function (purchase) { Module._meli_game_add_portal(purchase.month); });
+      }
+      if (!started) { overlay.className = 'ready'; }
+      document.body.setAttribute('data-portals', retroData.purchases.length);
+      document.body.setAttribute('data-ready', '1');
+    }
+
+    function longDate(day) {
+      return day.day + ' de ' + MONTHS_ES[day.month - 1] + ' de ' + day.year;
+    }
+
+    // Shows the purchase of portal `index`, with the game paused behind it until
+    // Module._meli_game_continue(). Returns false if there is nothing to show.
+    function showPurchase(index) {
+      var purchase = retroData.purchases[index];
+      if (!purchase) { return false; }
+      var monthName = MONTHS_ES[purchase.month - 1];
+
+      document.getElementById('retro-kicker').textContent = 'Tu ' + retroData.year + ' en Mercado Libre';
+      document.getElementById('retro-intro').textContent = 'Volviste en el tiempo: esto compraste en ' + monthName + '.';
+      document.getElementById('retro-title').textContent = purchase.title;
+      document.getElementById('retro-date').textContent = purchase.day
+        ? 'Compra del ' + longDate(purchase.day)
+        : 'Compra de ' + monthName + ' de ' + retroData.year;
+      retroImage.alt = purchase.title;
+      document.getElementById('retro-photo').style.display = purchase.image ? '' : 'none';
+      if (purchase.image) { retroImage.src = purchase.image; }
+
+      // Which purchase of the trip this is.
+      retroDots.textContent = '';
+      retroData.purchases.forEach(function (other, position) {
+        var dot = document.createElement('span');
+        dot.className = position < index ? 'done' : (position === index ? 'now' : '');
+        retroDots.appendChild(dot);
+      });
+      retroDots.setAttribute('aria-label', 'Compra ' + (index + 1) + ' de ' + retroData.purchases.length);
+
+      // The month runs backward for a moment, like the dial of a time machine, then settles.
+      var stepsLeft = 9;
+      clearInterval(retroTimer);
+      retroMonth.className = 'rewinding';
+      retroMonth.textContent = MONTHS_ES[(purchase.month - 1 + stepsLeft) % 12];
+      retroTimer = setInterval(function () {
+        stepsLeft -= 1;
+        retroMonth.textContent = MONTHS_ES[(purchase.month - 1 + stepsLeft) % 12];
+        if (stepsLeft <= 0) { clearInterval(retroTimer); retroMonth.className = ''; }
+      }, 60);
+
+      retro.className = 'open';
+      void retro.offsetWidth; // Lets the entrance animation start from the closed state
+      retro.className = 'open shown';
+      document.body.setAttribute('data-portal', index);
+      setTimeout(function () { if (retro.className === 'open shown') { retroContinue.focus(); } }, 600);
+      return true;
+    }
+
+    // ---- Going through a portal: what is heard, and when the purchase appears ----
+    //
+    // The moment the truck drives in, the music is turned down and the portal sound plays. When
+    // that sound is over, and the game has finished its trip through the tunnel, the purchase
+    // opens with the modal sound. When the modal sound is over, the music comes back up.
+    var portalTrip = 0;         // Counts the trips, so a timer left over from an earlier one does nothing
+    var portalSoundOver = true; // The portal sound of this trip has finished
+    var purchaseDue = -1;       // Portal whose purchase is waiting for that, or -1
+
+    function portalEntered() {
+      var trip = ++portalTrip;
+      portalSoundOver = false;
+      purchaseDue = -1;
+      fadeMusic(MUSIC_DUCKED_VOLUME, 0.3);
+      setTimeout(function () {
+        if (trip !== portalTrip) { return; }
+        portalSoundOver = true;
+        openPurchaseWhenDue();
+      }, playSoundNamed('portal') * 1000);
+    }
+
+    function portalReached(index) {
+      purchaseDue = index;
+      openPurchaseWhenDue();
+    }
+
+    function openPurchaseWhenDue() {
+      if (!portalSoundOver || purchaseDue < 0) { return; }
+      var trip = portalTrip;
+      var index = purchaseDue;
+      purchaseDue = -1;
+      if (!showPurchase(index)) {
+        // Nothing to show: do not leave the game paused, nor the music low.
+        fadeMusic(MUSIC_VOLUME, 0.8);
+        Module._meli_game_continue();
+        return;
+      }
+      setTimeout(function () {
+        if (trip === portalTrip) { fadeMusic(MUSIC_VOLUME, 0.8); }
+      }, playSoundNamed('modal') * 1000);
+    }
+
+    // The game moved on. Usually the "Continuar" button caused it and the card is already gone;
+    // on an automated run it happens by itself, perhaps before the purchase was even shown.
+    function portalLeft() {
+      if (purchaseDue >= 0) {
+        purchaseDue = -1;
+        fadeMusic(MUSIC_VOLUME, 0.8);
+      }
+      hidePurchase();
+    }
+
+    function hidePurchase() {
+      clearInterval(retroTimer);
+      retro.className = '';
+      document.body.setAttribute('data-portal', '');
+    }
+
+    // "Continuar": the card goes back into the tunnel, then the game resumes where it stopped.
+    retroContinue.addEventListener('click', function () {
+      if (retro.className !== 'open shown') { return; }
+      retro.className = 'open shown closing';
+      setTimeout(function () {
+        hidePurchase();
+        Module._meli_game_continue();
+      }, 280);
+    });
 
     // Fullscreen is best effort: some browsers and WebViews do not offer it (iPhone Safari, or an
     // app WebView whose host has not enabled it). The game works the same without it.
@@ -277,16 +688,23 @@
     var Module = {
       canvas: canvas,
       arguments: query.filter(function (item) { return item.indexOf('--') === 0; }),
-      // Called by the game once it is loaded and drawing: show the Start button.
+      // Called by the game once it is loaded and drawing. The Start button waits for the
+      // purchases as well (see showStartWhenReady).
       onGameReady: function () {
-        overlay.className = 'ready';
-        document.body.setAttribute('data-ready', '1');
+        gameLoaded = true;
+        showStartWhenReady();
       },
+      // Called by the game when the truck drives into a time portal, when it has gone through
+      // and the game is paused, and when it moves on.
+      onPortalEntered: function () { portalEntered(); },
+      onPortalReached: function (index) { portalReached(index); },
+      onPortalLeft: function () { portalLeft(); },
       // Called by the game when it leaves the start screen.
       onGameStarted: function () {
         started = true;
         overlay.className = 'hidden';
         hud.classList.add('visible');
+        portalSoundNames.forEach(fetchSound);
         // Already done by the Start button; this covers --autostart, where the browser decides
         // whether audio may run without a gesture.
         unlockSounds();
@@ -301,12 +719,13 @@
           hud.classList.add('pop');
         }
       },
-      // Called by the game with a SoundEffect value.
       playSound: playSound,
       soundsPlayed: soundsPlayed,
       onAbort: function () { showMessage('Não foi possível iniciar o jogo neste aparelho.'); },
       onExit: function (code) { if (code !== 0) { showMessage('Não foi possível iniciar o jogo neste aparelho.'); } }
     };
+
+    loadPurchases();
 
     // A WebView sent to the background can lose its WebGL context: offer a clean restart.
     canvas.addEventListener('webglcontextlost', function (event) {

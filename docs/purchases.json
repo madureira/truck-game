@@ -1,0 +1,23 @@
+{
+  "year": 2026,
+  "purchases": [
+    {
+      "month": 3,
+      "date": "2026-03-14",
+      "title": "Kit de 4 camisetas básicas de algodón",
+      "image": "images/camiseta.webp"
+    },
+    {
+      "month": 7,
+      "date": "2026-07-22",
+      "title": "Zapatillas deportivas Kappa para correr",
+      "image": "images/tenis.webp"
+    },
+    {
+      "month": 11,
+      "date": "2026-11-06",
+      "title": "Consola PlayStation 5 Slim Digital con 2 juegos",
+      "image": "images/playstation5.webp"
+    }
+  ]
+}
