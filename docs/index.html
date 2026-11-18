@@ -261,6 +261,14 @@
     var hudCount = document.getElementById('hud-count');
     var started = false;
 
+    // Stamp of this build, written in by the build (web/stamp_build.cmake). The files that belong
+    // to it are asked for with the stamp in their address, so a copy of an older build kept by
+    // the browser or by a server in between is never used with this page.
+    var buildStamp = '3a1efe4979';
+    function stamped(address) {
+      return buildStamp.indexOf('__') === 0 ? address : address + '?v=' + buildStamp;
+    }
+
     function showMessage(text) {
       message.textContent = text;
       overlay.className = '';
@@ -268,9 +276,9 @@
 
     // Background music: an <audio> element streams the file, so nothing is decoded up front and
     // it costs no WebAssembly. Browsers only let it play after a user gesture: the Start button.
-    var MUSIC_VOLUME = 0.6;
-    var MUSIC_DUCKED_VOLUME = 0.15; // While the sounds of a time portal play over it
-    var music = new Audio('music.mp3');
+    var MUSIC_VOLUME = 0.4;
+    var MUSIC_DUCKED_VOLUME = 0.1; // While the sounds of a time portal play over it
+    var music = new Audio(stamped('music.mp3'));
     music.loop = true;
     music.preload = 'none';
     music.volume = MUSIC_VOLUME;
@@ -346,7 +354,7 @@
     }
 
     function fetchSound(name) {
-      fetch(name + '.mp3')
+      fetch(stamped(name + '.mp3'))
         .then(function (response) { return response.ok ? response.arrayBuffer() : Promise.reject(); })
         .then(function (data) { soundFiles[name] = data; decodeSound(name); })
         .catch(function () { /* the game simply plays without this sound */ });
@@ -500,7 +508,8 @@
       var address = purchasesAddress();
       // Never keep the player waiting for it: without the data the game simply has no portals.
       setTimeout(function () { settlePurchases(readPurchases(null)); }, 6000);
-      fetch(address)
+      // The data may change without a new build: always check with the server.
+      fetch(address, { cache: 'no-cache' })
         .then(function (response) { return response.ok ? response.json() : Promise.reject(); })
         .then(function (raw) { settlePurchases(readPurchases(raw, address)); })
         .catch(function () { settlePurchases(readPurchases(null)); });
@@ -510,7 +519,11 @@
     // when the game is told which portals to put on the road: one per purchase, in order.
     function showStartWhenReady() {
       if (!gameLoaded || !dataSettled) { return; }
-      if (retroData.purchases.length > 0) {
+      // (If the game's script is somehow older than this page and knows nothing about portals,
+      // the game still has to start: it just has none.)
+      var canPlacePortals = typeof Module._meli_game_clear_portals === 'function' &&
+                            typeof Module._meli_game_add_portal === 'function';
+      if (canPlacePortals && retroData.purchases.length > 0) {
         Module._meli_game_clear_portals();
         retroData.purchases.forEach(function (purchase) { Module._meli_game_add_portal(purchase.month); });
       }
@@ -687,6 +700,8 @@
 
     var Module = {
       canvas: canvas,
+      // Where the game's own files are: next to the page, with the build stamp.
+      locateFile: function (path) { return stamped(path); },
       arguments: query.filter(function (item) { return item.indexOf('--') === 0; }),
       // Called by the game once it is loaded and drawing. The Start button waits for the
       // purchases as well (see showStartWhenReady).
@@ -802,6 +817,6 @@
       }, 100);
     }
   </script>
-  <script async type="text/javascript" src="index.js"></script>
+  <script async type="text/javascript" src="index.js?v=3a1efe4979"></script>
 </body>
 </html>
